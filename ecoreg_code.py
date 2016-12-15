@@ -7,13 +7,13 @@
 # Created:     12/12/2016
 #-------------------------------------------------------------------------------
 
-def run_pca(df, cols=None, c=None):
+def run_pca(df, cols=None):
     """ Applies PCA and generates summary plots.
     
     Args:
-        df      Dataframe of features
+        df      Dataframe of features. Must include "country" and "regulated" 
+                columns
         cols    Subset of columns to use
-        c       Categorical variable for colouring points
         
     Returns:
         Dataframe of PC loadings. Also generates a range of plots.
@@ -24,13 +24,16 @@ def run_pca(df, cols=None, c=None):
     from mpl_toolkits.mplot3d import Axes3D
     from sklearn.preprocessing import StandardScaler
     from sklearn.decomposition import PCA
+    import mpld3
 
-    # Define colours to use for different categories
-    col_dict = {'D':'g', 'N':'b', 0:'g', 1:'b'}
+    # Define and markers to use for different categories
+    groups_dict = {(u'D', 0):('Germany, unregulated', 'g', 'o'),
+                   (u'N', 0):('Norway, unregulated', 'b', 'o'),
+                   (u'D', 1):('Germany, regulated', 'g', '^'),
+                   (u'N', 1):('Norway, regulated', 'b', '^')}
     
     # Extract cols of interest
-    if c:
-        colours = df[[c]]
+    cats = df[['country', 'regulated']]
 
     if cols:
         df = df[cols].astype(float)
@@ -48,13 +51,16 @@ def run_pca(df, cols=None, c=None):
     var_exp = 100*pca.explained_variance_ratio_
     cum_exp = np.cumsum(var_exp)
 
-    print 'Variance explained by first 3 PCs (%):\n'
-    print var_exp[:3]
-    print '\nTotal: %.2f%%' % var_exp[:3].sum()
-    
     # Get eigenvalues
     cov_mat = np.cov(feat_std.T)
     eig_vals, eig_vecs = np.linalg.eig(cov_mat)
+
+    # Get number of EVs > 1 (Kaiser-Guttman criterion)
+    # and print summary
+    n_kgc = (eig_vals > 1).sum()
+    print 'Variance explained by first %s PCs (%%):\n' % n_kgc
+    print var_exp[:n_kgc]
+    print '\nTotal: %.2f%%' % var_exp[:n_kgc].sum()
     
     # Plot
     fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(16, 6))
@@ -69,7 +75,7 @@ def run_pca(df, cols=None, c=None):
     axes[0].legend(loc='center right')
     
     # Eigenvalues
-    axes[1].plot(range(1, len(cum_exp)+1), eig_vals, 
+    axes[1].plot(range(1, len(eig_vals)+1), np.sort(eig_vals)[::-1], 
                  'r-o', label='Eigenvalues')
     axes[1].axhline(1, c='k', ls='-', label='Kaiser-Guttman threshold')
     axes[1].set_xlabel('Principal component')
@@ -91,21 +97,25 @@ def run_pca(df, cols=None, c=None):
     # and transforming the result
     feat_reduced = PCA(n_components=2).fit_transform(feat_std)
     
-    # Build df with colours
+    # Build df 
     data = pd.DataFrame({'PC1':feat_reduced[:, 0],
                          'PC2':feat_reduced[:, 1],
-                         c:colours[c]})    
-    groups = data.groupby(c)
+                         'country':cats['country'],
+                         'regulated':cats['regulated']})    
 
+    groups = data.groupby(['country', 'regulated'])
+    
     # Plot
     for name, group in groups:
-        ax.scatter(group['PC1'], group['PC2'], s=40,
-                   label=name, c=col_dict[name])
+        ax.scatter(group['PC1'], group['PC2'], s=60,
+                   label=groups_dict[name][0],
+                   c=groups_dict[name][1],
+                   marker=groups_dict[name][2])
+        
     ax.set_xlabel('First principal component')
     ax.set_ylabel('Second principal component')
     ax.set_title('First two PCA directions')
-    ax.legend(title=c, loc='best')
-   
+       
     # Plot 3 components
     ax = fig.add_subplot(1, 2, 2, projection='3d', 
                          elev=-150, azim=135)
@@ -118,18 +128,24 @@ def run_pca(df, cols=None, c=None):
     data = pd.DataFrame({'PC1':feat_reduced[:, 0],
                          'PC2':feat_reduced[:, 1],
                          'PC3':feat_reduced[:, 2],
-                         c:colours[c]})    
-    groups = data.groupby(c)
+                         'country':cats['country'],
+                         'regulated':cats['regulated']})   
+    
+    groups = data.groupby(['country', 'regulated'])
     
     # Plot
     for name, group in groups:
         ax.scatter(group['PC1'], group['PC2'], group['PC3'],
-                   label=name, c=col_dict[name], s=40)
+                   label=groups_dict[name][0],
+                   c=groups_dict[name][1],
+                   marker=groups_dict[name][2],
+                   s=60)
+        
     ax.set_title('First three PCA directions')
     ax.set_xlabel('First principal component')
     ax.set_ylabel('Second principal component')
     ax.set_zlabel('Third principal component')
-    ax.legend(title=c, loc='best')
+    ax.legend(bbox_to_anchor=(0.15, -0.1), frameon=True)
     plt.show()
 
     return loads
