@@ -282,3 +282,232 @@ def bayesian_t(df, val_col, grp_col='regulated',
                     ylabel='Frequency')
     
     return trace
+
+def mlr(df, exp_vars, resp_var, 
+        method='ols', 
+        fit_intercept=True,
+        kcv=3,
+        normalize=False):
+    """ Performs various types of multiple linear regression.
+    
+    Args:
+        df:            Data frame with features/responses as columns 
+                       and samples as rows.
+        exp_vars:      List of string specifying explanatory variables.
+        resp_var:      String specifying the response variable.
+        method:        'ols', 'lasso', 'ridge', 'el-net'.
+        fit_intercept: Whether to fit an intercept. Default is True.
+        kcv:           Number of "folds" for k-fold cross validation.
+                       Default is 3.
+        normalize:     Whether to normalise X before regression.
+                       Default is False.
+    Returns:
+        A data frame of parameter estimates with (rather dodgy?)
+        2-sigma error bounds and 95% significance
+    """
+    from sklearn import cross_validation
+    from sklearn.linear_model import LinearRegression, RidgeCV
+    from sklearn.linear_model import LassoCV, ElasticNetCV
+    from sklearn.metrics import r2_score
+    from sklearn.utils import resample
+    import matplotlib.pyplot as plt
+    import seaborn as sn
+    import pandas as pd
+    import numpy as np
+    
+    # Separate data
+    X = df[exp_vars]
+    y = df[resp_var]
+    
+    # Setup model
+    if method == 'ols':
+        model = LinearRegression(fit_intercept=fit_intercept, 
+                                 normalize=normalize)
+    elif method == 'lasso':
+        model = LassoCV(fit_intercept=fit_intercept, 
+                        normalize=normalize, 
+                        max_iter=10000,
+                        cv=kcv)
+    elif method == 'ridge':
+        model = RidgeCV(fit_intercept=fit_intercept, 
+                        normalize=normalize, 
+                        alphas=np.logspace(-10, 10, 21))
+    elif method == 'el-net':
+        model = ElasticNetCV(l1_ratio=[.1, .5, .7, .9, .95, .99, 1],
+                             fit_intercept=fit_intercept, 
+                             normalize=normalize,
+                             cv=kcv)
+    else:
+        raise ValueError('"method" parameter must be in ["ols", "lasso", "ridge", "el-net"]')
+    
+    # k-fold cross validation
+    #cv_scores = cross_validation.cross_val_score(model, X, y, cv=kcv, scoring='r2')
+    #print 'Mean r2 from %s-fold CV: %.3f\n' % (kcv, cv_scores.mean())
+    
+    # Train model on full dataset
+    model.fit(X, y)
+    
+    # Get y-hat
+    y_pred = model.predict(X)
+    
+    # r2 based on calibration data
+    r2 = r2_score(y, y_pred)
+    print 'r2:', r2
+    print ''
+    
+    # Summary of model
+    print model
+    print ''
+    
+    if method == 'lasso':
+        print 'Lasso alpha:', model.alpha_
+        print ''
+    elif method == 'ridge':
+        print 'Ridge alpha:', model.alpha_
+        print ''
+    elif method == 'el-net':
+        print 'Elastic net alpha:', model.alpha_   
+        print 'Elastic net L1 ratio:', model.l1_ratio_ 
+        print ''
+    else: # OLS
+        pass
+    
+    # Plot
+    fig = plt.figure(figsize=(15,15))
+    
+    # Paired points for each site
+    ax1 = plt.subplot2grid((2,2), (0,0), colspan=2)
+    ax1.plot(range(0, len(X.index)), y, 'ro', label='Observed')
+    ax1.plot(range(0, len(X.index)), y_pred, 'b^', label='Modelled')
+    
+    ax1.set_xticks(range(0, len(X.index)))
+    ax1.set_xticklabels(X.index, rotation=90, fontsize=12)
+    ax1.set_xlim(0, len(X.index)-1)
+    
+    ax1.set_xlabel('Site code', fontsize=16)
+    ax1.set_ylabel(resp_var)
+    ax1.set_title('Points paired for each location', fontsize=20)
+    ax1.legend(loc='best', fontsize=16)
+    
+    # Modelled versus observed
+    ax2 = plt.subplot2grid((2,2), (1,0), colspan=1)
+    ax2.plot(y, y_pred, 'ro')
+    ax2.set_xlabel('Observed', fontsize=16)
+    ax2.set_ylabel('Modelled', fontsize=16)
+    ax2.set_title('Modelled versus observed', fontsize=20)
+    
+    # Hist of residuals
+    ax3 = plt.subplot2grid((2,2), (1,1), colspan=1)
+    sn.distplot(y - y_pred, kde=True, ax=ax3)
+    ax3.set_title('Histogram of residuals', fontsize=20)
+    
+    plt.tight_layout()
+    
+    # Get param estimates
+    params = pd.Series(model.coef_, index=X.columns)
+
+    # Estimate confidence using bootstrap
+    # i.e. what is the std. dev. of the estimates for each parameter
+    # based on 1000 resamplings
+    err = np.std([model.fit(*resample(X, y)).coef_ for i in range(1000)], 
+                 axis=0)
+
+    # Build df
+    res = pd.DataFrame({'effect':params,
+                        'error':2*err})
+
+    # Rough indicator of significance: are the estimated values more than
+    # 2 std. devs. from 0 (~95% CI?). NB: this assumnes the "marginal posterior"  
+    # is normal, which I haven't tested for and which quite possibly isn't true
+    # - use with care! 
+    res['signif'] = np.abs(res['effect']) > res['error']
+    
+    return res
+
+def robust_lin_reg(df, var_map, 
+                   steps=2000, mcmc='metropolis',
+                   plot_trace=True, plot_vars=True):
+    """ Robust Bayesian linear regression.
+    
+    Args:
+        df         Dataframe. Must have a column containing values
+                   and a categorical 'regulated' column that is [0, 1]
+                   to define the two groups
+        val_map    Dict specifying x and y vars: {'x':'expl_var',
+                                                  'y':'resp_var'}
+        steps      Number of steps to take in MCMC chains
+        mcmc       Sampler to use: ['metropolis', 'slice', 'nuts']
+        plot_trace Whether to plot the MCMC traces
+        plot_vars  Whether to plot posteriors for variables
+    
+    Returns:
+        Creates plots showing the distribution of differences in 
+        means and variances, plus optional diagnostics. Returns the 
+        MCMC trace
+    """
+    import pymc3 as pm
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import theano 
+    
+    # Get cols
+    df = df[var_map.values()]
+    
+    # Swap keys and values
+    var_map_rev = dict((v,k) for k,v in var_map.iteritems())
+    
+    # Convert df columns to x and y
+    df.columns = [var_map_rev[i] for i in df.columns]
+
+    with pm.Model() as model:
+        # Priors
+        nu = pm.Exponential('v_minus_one', 1./29.) + 1
+        
+        # The patsy string below automatically assumes mu=0 and estimates
+        # lam = (1/s.d.**2), so don't need to add these. Do need to add 
+        # prior for nu though.
+        family = pm.glm.families.StudentT(nu=nu)
+        
+        # Define model
+        pm.glm.glm('y ~ x', df, family=family)
+        
+        # Find MAP as starting point
+        start = pm.find_MAP()
+
+        # Run sampler to approximate posterior
+        if mcmc == 'metropolis':
+            step = pm.Metropolis()
+            trace = pm.sample(steps, step, start=start)
+        elif mcmc == 'slice':
+            step = pm.Slice()
+            trace = pm.sample(steps, step, start=start)
+        elif mcmc == 'nuts':
+            step = pm.NUTS(scaling=start)
+            trace = pm.sample(steps, step)
+        else:
+            raise ValueError("mcmc must be one of ['metropolis', 'slice', 'nuts']")
+
+    # Traces
+    if plot_trace:
+        pm.traceplot(trace)
+    
+    # Posteriors for variables
+    if plot_vars:
+        pm.plot_posterior(trace[-1000:],
+                          varnames=['v_minus_one', 'lam'],
+                          alpha=0.3)
+
+        pm.plot_posterior(trace[1000:],
+                          varnames=['x', 'Intercept'],
+                          ref_val=0,
+                          alpha=0.3)
+        
+    # PPC
+    fig = plt.figure(figsize=(10, 10))
+    ax = fig.add_subplot(111, xlabel=var_map['x'], ylabel=var_map['y'])
+    ax.scatter(df.x, df.y, marker='o', label='Data')
+    pm.glm.plot_posterior_predictive(trace, samples=50, eval=df.x,
+                                     label='PPC', alpha=0.3)
+    
+    return trace
