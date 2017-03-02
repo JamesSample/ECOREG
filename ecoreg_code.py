@@ -511,3 +511,133 @@ def robust_lin_reg(df, var_map,
                                      label='PPC', alpha=0.3)
     
     return trace
+
+def plot_lasso_path(df, resp_var, exp_vars):
+    """ Plot the lasso path. Both response and explanatory
+        variables are standardised first.
+    
+    Args:
+        df:       Dataframe
+        resp_var: String. Response variable
+        exp_vars: List of strings. Explanatory variables
+    
+    Returns:
+        Dataframe of path and matplotlib figure with tooltip-
+        labelled lines. To view this figure in a notebook, use
+        mpld3.display(f) on the returned figure object, f.
+    """
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import mpld3
+    from mpld3 import plugins
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.linear_model import lasso_path
+
+    # Standardise the feature data and response
+    feat_std = StandardScaler().fit_transform(df[[resp_var,] + exp_vars])
+    
+    # Calculate lasso path
+    alphas, coefs, _ = lasso_path(feat_std[:, 1:],         # X
+                                  feat_std[:, 0],          # y
+                                  eps=1e-3,                # Path length
+                                  fit_intercept=False)     # Already centred
+
+    # -Log(alphas) is easier for display
+    neg_log_alphas = -np.log10(alphas)
+
+    # Build df of results
+    res_df = pd.DataFrame(data=coefs.T, index=alphas, columns=exp_vars)
+    
+    # Plot
+    fig, ax = plt.subplots()
+
+    for coef, name in zip(coefs, exp_vars):
+        line = ax.plot(neg_log_alphas, coef, label=name)
+        plugins.connect(fig, plugins.LineLabelTooltip(line[0], label=name))
+
+    plt.xlabel('-Log(alpha)')
+    plt.ylabel('Coefficients')
+    plt.title('Lasso paths')
+    plt.legend(loc='best', title='', ncol=3)    
+    
+    return res_df, fig
+
+def best_lasso(df, resp_var, exp_vars, kcv=3, cv_path=False, 
+               hists=False):
+    """ Find the best lasso model through cross-validation.
+    
+    Args:
+        df:       Dataframe
+        resp_var: String. Response variable
+        exp_vars: List of strings. Explanatory variables
+        kcv:      Number of cross-validation folds
+        cv_path:  Whether to plot the path of cross-validation
+                  scores
+        hists:    Whether to plot histograms of coefficient
+                  estimates based on bootstrapping
+    
+    Returns:
+        Dataframe of coefficients for best model and histograms
+        of coefficient variability based on bootstrap resampling.
+    """
+    import seaborn as sn
+    import pandas as pd
+    import numpy as np
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.linear_model import LassoCV
+    from sklearn.utils import resample
+
+    # Standardise the feature data and response
+    feat_std = StandardScaler().fit_transform(df[[resp_var,] + exp_vars])
+
+    model = LassoCV(fit_intercept=False, 
+                    normalize=False, 
+                    max_iter=10000,
+                    cv=kcv,
+                    eps=1e-3)
+
+    # Train model on full dataset
+    model.fit(feat_std[:, 1:], feat_std[:, 0])
+
+    print model
+
+    # Get param estimates
+    params = pd.DataFrame(pd.Series(model.coef_, index=exp_vars))
+    
+    if cv_path:
+        # Display results
+        m_log_alphas = -np.log10(model.alphas_)
+
+        plt.figure()
+        plt.plot(m_log_alphas, model.mse_path_, ':')
+        plt.plot(m_log_alphas, model.mse_path_.mean(axis=-1), 'k',
+                 label='Average across the folds', linewidth=2)
+        plt.axvline(-np.log10(model.alpha_), linestyle='--', color='k',
+                    label='alpha: CV estimate')
+
+        plt.legend()
+
+        plt.xlabel('-log(alpha)')
+        plt.ylabel('Mean square error')
+        plt.axis('tight')
+
+        plt.show()
+
+    if hists:
+        # Estimate confidence using bootstrap
+        # i.e. what is the std. dev. of the estimates for each parameter
+        # based on 1000 resamplings
+        err = np.array([model.fit(*resample(feat_std[:, 1:], 
+                                            feat_std[:, 0])).coef_ for i in range(1000)])
+        err_df = pd.DataFrame(data=err, columns=exp_vars)
+
+        # Melt for plotting with seaborn
+        err_df = pd.melt(err_df)
+        g = sn.FacetGrid(err_df, col="variable", col_wrap=4)
+        g = g.map(plt.hist, "value", bins=20)
+
+        # Vertical line at 0
+        g.map(sn.plt.axvline, x=0, c='k', lw=2)
+    
+    return params
