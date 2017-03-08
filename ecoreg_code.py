@@ -584,6 +584,7 @@ def best_lasso(df, resp_var, exp_vars, kcv=3, cv_path=False,
     import seaborn as sn
     import pandas as pd
     import numpy as np
+    import matplotlib.pyplot as plt
     from sklearn.preprocessing import StandardScaler
     from sklearn.linear_model import LassoCV
     from sklearn.utils import resample
@@ -641,3 +642,54 @@ def best_lasso(df, resp_var, exp_vars, kcv=3, cv_path=False,
         g.map(sn.plt.axvline, x=0, c='k', lw=2)
     
     return params
+
+def best_subsets(df, resp_var, exp_vars):
+    """ Performs all possible regressions involving exp_vars
+        and returns the one with the lowest BIC.
+    
+    Args:
+        df:       Dataframe
+        resp_var: String. Response variable
+        exp_vars: List of strings. Explanatory variables
+    
+    Returns:
+        Results for best model.
+    """
+    import itertools
+    import numpy as np
+    import pandas as pd
+    import statsmodels.api as sm
+
+    # Dict to store BIC values
+    bics = {}
+
+    # Loop over all combinations
+    for k in range(1, len(exp_vars)+1):
+        for variables in itertools.combinations(exp_vars, k):
+            preds = df[list(variables)]
+
+            # Add constant
+            preds = sm.add_constant(preds)
+
+            # Compute OLS results
+            res = sm.OLS(df[[resp_var,]], preds).fit()
+
+            # Add result to dict
+            bics[variables] = res.bic
+
+    # Get the combination with lowest BIC
+    best_vars = list(min(bics, key=bics.get))
+
+    # Print regression results for these vars
+    preds = df[list(best_vars)]
+
+    # Add constant
+    preds = sm.add_constant(preds)
+
+    # Compute OLS results
+    res = sm.OLS(df[[resp_var,]], preds).fit()
+
+    print 'Regression results for the model with the lowest BIC:\n'
+    print res.summary()
+    
+    return res
