@@ -8,6 +8,6 @@ The analysis took place in three main stages. Technical details are provided at 
  
  2. [Tests for differences between regulated and unregulated sites](http://nbviewer.jupyter.org/github/JamesSample/ECOREG/blob/master/final_analysis/ecoreg_full_analysis_2.ipynb) 
  
- 3. [Exploring regression relationships](http://nbviewer.jupyter.org/github/JamesSample/ECOREG/blob/master/final_analysis/ecoreg_full_analysis_2.ipynb)
+ 3. [Exploring regression relationships](http://nbviewer.jupyter.org/github/JamesSample/ECOREG/blob/master/final_analysis/ecoreg_full_analysis_3.ipynb)
  
  Further notebooks describing the pre-processing and initial exploration of the datasets are available [here](https://github.com/JamesSample/ECOREG/tree/master/exploratory_analysis).
