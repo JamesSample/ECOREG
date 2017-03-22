@@ -4,9 +4,9 @@ This project investigated the relationships between flow regulation, water chemi
 
 The analysis took place in three main stages. Technical details are provided at the following links:
 
- 1. [Hydrological regimes and dimesnionality reduction](http://nbviewer.jupyter.org/github/JamesSample/ECOREG/blob/master/final_analysis/ecoreg_full_analysis_1.ipynb) <br><br>
+ 1. [Hydrological regimes and dimesnionality reduction](http://nbviewer.jupyter.org/github/JamesSample/ECOREG/blob/master/final_analysis/ecoreg_full_analysis_1.ipynb) 
  
- 2. [Tests for differences between regulated and unregulated sites](http://nbviewer.jupyter.org/github/JamesSample/ECOREG/blob/master/final_analysis/ecoreg_full_analysis_2.ipynb) <br><br>
+ 2. [Tests for differences between regulated and unregulated sites](http://nbviewer.jupyter.org/github/JamesSample/ECOREG/blob/master/final_analysis/ecoreg_full_analysis_2.ipynb) 
  
  3. [Exploring of regression relationships](http://nbviewer.jupyter.org/github/JamesSample/ECOREG/blob/master/final_analysis/ecoreg_full_analysis_2.ipynb)
  
